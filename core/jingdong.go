@@ -107,7 +107,7 @@ func NewJingDong(option JDConfig) *JingDong {
 	}
 
 	jd.client = &http.Client{
-		Timeout: time.Minute,
+		Timeout: time.Minute * 20,
 		Jar:     jd.jar,
 	}
 
