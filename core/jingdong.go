@@ -22,7 +22,8 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"github.com/axgle/mahonia"
 	sjson "github.com/bitly/go-simplejson"
-	clog "gopkg.in/clog.v1"
+	"gopkg.in/clog.v1"
+	"github.com/matryer/try"
 )
 
 const (
@@ -227,10 +228,15 @@ func (jd *JingDong) loginPage(URL string) error {
 
 	applyCustomHeader(req, DefaultHeaders)
 
-	if resp, err = jd.client.Do(req); err != nil {
-		clog.Info("请求登录页失败: %+v", err)
-		return err
-	}
+	err = try.Do(func(attempt int) (bool,error){
+		resp, err = jd.client.Do(req)
+		if err != nil {
+			clog.Info("请求登录页失败: %+v", err)
+			time.Sleep(10 * time.Second)
+			clog.Info("重试请求登录页...")
+		}
+		return attempt < 2000,err
+	})
 
 	defer resp.Body.Close()
 	return nil
@@ -517,10 +523,16 @@ func (jd *JingDong) CartDetails() error {
 		return err
 	}
 
-	if resp, err = jd.client.Do(req); err != nil {
-		clog.Error(0, "获取购物车详情错误: %+v", err)
-		return err
-	}
+	err = try.Do(func(attempt int) (bool,error){
+		resp, err = jd.client.Do(req)
+		if err != nil {
+			clog.Error(0, "获取购物车详情错误: %+v", err)
+			time.Sleep(10 * time.Second)
+			clog.Info("重试获取购物车详情...")
+		}
+		return attempt < 2000,err
+	})
+
 
 	defer resp.Body.Close()
 	if doc, err = goquery.NewDocumentFromReader(resp.Body); err != nil {
@@ -591,10 +603,15 @@ func (jd *JingDong) OrderInfo() error {
 		return err
 	}
 
-	if resp, err = jd.client.Do(req); err != nil {
-		clog.Error(0, "获取订单页错误: %+v", err)
-		return err
-	}
+	err = try.Do(func(attempt int) (bool,error){
+		resp, err = jd.client.Do(req)
+		if err != nil {
+			clog.Error(0, "获取订单页错误: %+v", err)
+			time.Sleep(10 * time.Second)
+			clog.Info("重试获取订单页...")
+		}
+		return attempt < 2000,err
+	})
 
 	defer resp.Body.Close()
 	if doc, err = goquery.NewDocumentFromReader(resp.Body); err != nil {
@@ -695,9 +712,18 @@ func (jd *JingDong) getResponse(method, URL string, queryFun func(URL string) st
 	}
 	applyCustomHeader(req, DefaultHeaders)
 
-	if resp, err = jd.client.Do(req); err != nil {
-		return nil, err
-	}
+	//if resp, err = jd.client.Do(req); err != nil {
+	//	return nil, err
+	//}
+	err = try.Do(func(attempt int) (bool,error){
+		resp, err = jd.client.Do(req)
+		if err != nil {
+			clog.Error(0, "请求错误: %+v", err)
+			time.Sleep(10 * time.Second)
+			clog.Info("重试请求...")
+		}
+		return attempt < 2000,err
+	})
 
 	defer resp.Body.Close()
 	var reader io.Reader
