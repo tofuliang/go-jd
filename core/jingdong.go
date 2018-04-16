@@ -645,52 +645,66 @@ func (jd *JingDong) OrderInfo() error {
 // SubmitOrder ... submit order to JingDong, return orderID or error
 //
 func (jd *JingDong) SubmitOrder() (string, error) {
+	var (
+		err  error
+		data []byte
+		res string
+		msg string
+		orderID int64
+	)
+
 	clog.Info(strSeperater)
 	clog.Info("提交订单>")
 
-	data, err := jd.getResponse("POST", URLSubmitOrder, func(URL string) string {
-		queryString := map[string]string{
-			"overseaPurchaseCookies":             "",
-			"submitOrderParam.fp":                "",
-			"submitOrderParam.eid":               "",
-			"submitOrderParam.btSupport":         "1",
-			"submitOrderParam.sopNotPutInvoice":  "false",
-			"submitOrderParam.ignorePriceChange": "0",
-			"submitOrderParam.trackID":           jd.jar.Get("TrackID"),
+
+	err = try.Do(func(attempt int) (bool,error){
+
+		data, err = jd.getResponse("POST", URLSubmitOrder, func(URL string) string {
+			queryString := map[string]string{
+				"overseaPurchaseCookies":             "",
+				"submitOrderParam.fp":                "",
+				"submitOrderParam.eid":               "",
+				"submitOrderParam.btSupport":         "1",
+				"submitOrderParam.sopNotPutInvoice":  "false",
+				"submitOrderParam.ignorePriceChange": "0",
+				"submitOrderParam.trackID":           jd.jar.Get("TrackID"),
+			}
+			u, _ := url.Parse(URLSubmitOrder)
+			q := u.Query()
+			for k, v := range queryString {
+				q.Set(k, v)
+			}
+			u.RawQuery = q.Encode()
+			return u.String()
+		})
+
+		if err != nil {
+			clog.Error(0, "提交订单失败: %+v", err)
+			return attempt < 5, err
 		}
-		u, _ := url.Parse(URLSubmitOrder)
-		q := u.Query()
-		for k, v := range queryString {
-			q.Set(k, v)
+
+		var js *sjson.Json
+		if js, err = sjson.NewJson(data); err != nil {
+			clog.Info("Reponse Data: %s", data)
+			clog.Error(0, "无法解析订单响应数据: %+v", err)
+			return attempt < 5, err
 		}
-		u.RawQuery = q.Encode()
-		return u.String()
+		clog.Trace("订单: %s", data)
+
+		if succ, _ := js.Get("success").Bool(); succ {
+			orderID, _ = js.Get("orderId").Int64()
+			clog.Info("下单成功，订单号：%d", orderID)
+			return false, nil
+		}
+
+		res, _ = js.Get("resultCode").String()
+		msg, _ = js.Get("message").String()
+		clog.Error(0, "下单失败, %s : %s", res, msg)
+
+		return attempt < 5,err
 	})
 
-	if err != nil {
-		clog.Error(0, "提交订单失败: %+v", err)
-		return "", err
-	}
-
-	var js *sjson.Json
-	if js, err = sjson.NewJson(data); err != nil {
-		clog.Info("Reponse Data: %s", data)
-		clog.Error(0, "无法解析订单响应数据: %+v", err)
-		return "", err
-	}
-
-	clog.Trace("订单: %s", data)
-
-	if succ, _ := js.Get("success").Bool(); succ {
-		orderID, _ := js.Get("orderId").Int64()
-		clog.Info("下单成功，订单号：%d", orderID)
-		return fmt.Sprintf("%d", orderID), nil
-	}
-
-	res, _ := js.Get("resultCode").String()
-	msg, _ := js.Get("message").String()
-	clog.Error(0, "下单失败, %s : %s", res, msg)
-	return "", fmt.Errorf("failed to submit order (%s : %s)", res, msg)
+	return fmt.Sprintf("%d", orderID),nil
 }
 
 // wrap http get/post request
